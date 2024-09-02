@@ -1,0 +1,34 @@
+stages:
+  - build
+  - test
+  - deploy
+
+# Build stage
+build:
+  stage: build
+  tags:
+    - elk
+  script:
+    - echo "Building the application..."
+    # Add your build commands here, e.g., Docker build, compile code, etc.
+    - echo "Build completed"
+
+# Test stage
+test:
+  stage: test
+  tags:
+    - elk
+  script:
+    - echo "Running tests..."
+    # Add your test commands here, e.g., unit tests, integration tests, etc.
+    - echo "Tests completed"
+
+# Deploy stage
+deploy:
+  stage: deploy
+  tags:
+    - elk
+  script:
+    - echo "Deploying the application..."
+    # Add your deployment commands here, e.g., deploy to server, Kubernetes, etc.
+    - echo "Deployment completed"

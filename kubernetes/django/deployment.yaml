@@ -1,0 +1,38 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: django-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: django
+  template:
+    metadata:
+      labels:
+        app: django
+    spec:
+      containers:
+      - name: django
+        image: roeeelnekave/django:latest
+        command: ["sh", "-c", "python /usr/src/app/manage.py runserver 0.0.0.0:8000"]
+        ports:
+        - containerPort: 8000
+        env:
+        - name: DATABASE
+          value: "postgres"
+        - name: DB_HOST
+          value: "db"  # This refers to the PostgreSQL service
+        - name: POSTGRES_USER
+          value: "hello_django"
+        - name: POSTGRES_PASSWORD
+          value: "hello_django"
+        - name: DB_NAME
+          value: "hello_django_dev"
+      #   volumeMounts:
+      #   - name: app-volume
+      #     mountPath: /usr/src/app/
+      # # volumes:
+      # - name: app-volume
+      #   hostPath:
+      #     path: ./app  # Change this to your app directory path on the host
