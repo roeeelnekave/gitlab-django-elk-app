@@ -1,499 +1,1219 @@
-# Elastic stack (ELK) on Docker
+# Prequisites
 
-[![Elastic Stack version](https://img.shields.io/badge/Elastic%20Stack-8.15.0-00bfb3?style=flat&logo=elastic-stack)](https://www.elastic.co/blog/category/releases)
-[![Build Status](https://github.com/deviantony/docker-elk/workflows/CI/badge.svg?branch=main)](https://github.com/deviantony/docker-elk/actions?query=workflow%3ACI+branch%3Amain)
-[![Join the chat](https://badges.gitter.im/Join%20Chat.svg)](https://app.gitter.im/#/room/#deviantony_docker-elk:gitter.im)
+- Minikube
+- AWS Account
+- Docker
+- Git
+- Python
 
-Run the latest version of the [Elastic stack][elk-stack] with Docker and Docker Compose.
+## Create a github repository clone the repo 
 
-It gives you the ability to analyze any data set by using the searching/aggregation capabilities of Elasticsearch and
-the visualization power of Kibana.
-
-Based on the [official Docker images][elastic-docker] from Elastic:
-
-* [Elasticsearch](https://github.com/elastic/elasticsearch/tree/main/distribution/docker)
-* [Logstash](https://github.com/elastic/logstash/tree/main/docker)
-* [Kibana](https://github.com/elastic/kibana/tree/main/src/dev/build/tasks/os_packages/docker_generator)
-
-Other available stack variants:
-
-* [`tls`](https://github.com/deviantony/docker-elk/tree/tls): TLS encryption enabled in Elasticsearch, Kibana (opt in),
-  and Fleet
-* [`searchguard`](https://github.com/deviantony/docker-elk/tree/searchguard): Search Guard support
-
-> [!IMPORTANT]
-> [Platinum][subscriptions] features are enabled by default for a [trial][license-mngmt] duration of **30 days**. After
-> this evaluation period, you will retain access to all the free features included in the Open Basic license seamlessly,
-> without manual intervention required, and without losing any data. Refer to the [How to disable paid
-> features](#how-to-disable-paid-features) section to opt out of this behaviour.
-
----
-
-## tl;dr
-
-```sh
-docker-compose up setup
+1. let's create a django project for this run the following to create virtual environment
+```bash
+python3 -m venv virt
+```
+2. Activate your virtual environment
+```bash
+source virt/bin/activate
+```
+3. Now  create `./.gitignore` file copy the following to it
+```file
+virt
+```
+4. To Create a Directory for Django project run the following
+```bash
+mkdir -p ./app
 ```
 
-```sh
-docker-compose up
+5. Create a library file `./app/requirements.txt` and paste the following
+```requirements.txt
+asgiref==3.8.1
+Django==5.1
+psycopg2-binary==2.9.9
+sqlparse==0.5.1
 ```
 
-![Animated demo](https://user-images.githubusercontent.com/3299086/155972072-0c89d6db-707a-47a1-818b-5f976565f95a.gif)
-
----
-
-## Philosophy
-
-We aim at providing the simplest possible entry into the Elastic stack for anybody who feels like experimenting with
-this powerful combo of technologies. This project's default configuration is purposely minimal and unopinionated. It
-does not rely on any external dependency, and uses as little custom automation as necessary to get things up and
-running.
-
-Instead, we believe in good documentation so that you can use this repository as a template, tweak it, and make it _your
-own_. [sherifabdlnaby/elastdocker][elastdocker] is one example among others of project that builds upon this idea.
-
----
-
-## Contents
-
-1. [Requirements](#requirements)
-   * [Host setup](#host-setup)
-   * [Docker Desktop](#docker-desktop)
-     * [Windows](#windows)
-     * [macOS](#macos)
-1. [Usage](#usage)
-   * [Bringing up the stack](#bringing-up-the-stack)
-   * [Initial setup](#initial-setup)
-     * [Setting up user authentication](#setting-up-user-authentication)
-     * [Injecting data](#injecting-data)
-   * [Cleanup](#cleanup)
-   * [Version selection](#version-selection)
-1. [Configuration](#configuration)
-   * [How to configure Elasticsearch](#how-to-configure-elasticsearch)
-   * [How to configure Kibana](#how-to-configure-kibana)
-   * [How to configure Logstash](#how-to-configure-logstash)
-   * [How to disable paid features](#how-to-disable-paid-features)
-   * [How to scale out the Elasticsearch cluster](#how-to-scale-out-the-elasticsearch-cluster)
-   * [How to re-execute the setup](#how-to-re-execute-the-setup)
-   * [How to reset a password programmatically](#how-to-reset-a-password-programmatically)
-1. [Extensibility](#extensibility)
-   * [How to add plugins](#how-to-add-plugins)
-   * [How to enable the provided extensions](#how-to-enable-the-provided-extensions)
-1. [JVM tuning](#jvm-tuning)
-   * [How to specify the amount of memory used by a service](#how-to-specify-the-amount-of-memory-used-by-a-service)
-   * [How to enable a remote JMX connection to a service](#how-to-enable-a-remote-jmx-connection-to-a-service)
-1. [Going further](#going-further)
-   * [Plugins and integrations](#plugins-and-integrations)
-
-## Requirements
-
-### Host setup
-
-* [Docker Engine][docker-install] version **18.06.0** or newer
-* [Docker Compose][compose-install] version **1.28.0** or newer (including [Compose V2][compose-v2])
-* 1.5 GB of RAM
-
-> [!NOTE]
-> Especially on Linux, make sure your user has the [required permissions][linux-postinstall] to interact with the Docker
-> daemon.
-
-By default, the stack exposes the following ports:
-
-* 5044: Logstash Beats input
-* 50000: Logstash TCP input
-* 9600: Logstash monitoring API
-* 9200: Elasticsearch HTTP
-* 9300: Elasticsearch TCP transport
-* 5601: Kibana
-
-> [!WARNING]
-> Elasticsearch's [bootstrap checks][bootstrap-checks] were purposely disabled to facilitate the setup of the Elastic
-> stack in development environments. For production setups, we recommend users to set up their host according to the
-> instructions from the Elasticsearch documentation: [Important System Configuration][es-sys-config].
-
-### Docker Desktop
-
-#### Windows
-
-If you are using the legacy Hyper-V mode of _Docker Desktop for Windows_, ensure [File Sharing][win-filesharing] is
-enabled for the `C:` drive.
-
-#### macOS
-
-The default configuration of _Docker Desktop for Mac_ allows mounting files from `/Users/`, `/Volume/`, `/private/`,
-`/tmp` and `/var/folders` exclusively. Make sure the repository is cloned in one of those locations or follow the
-instructions from the [documentation][mac-filesharing] to add more locations.
-
-## Usage
-
-> [!WARNING]
-> You must rebuild the stack images with `docker-compose build` whenever you switch branch or update the
-> [version](#version-selection) of an already existing stack.
-
-### Bringing up the stack
-
-Clone this repository onto the Docker host that will run the stack with the command below:
-
-```sh
-git clone https://github.com/deviantony/docker-elk.git
+6. Install libraries run the following 
+```bash
+pip install -r requirements.txt
 ```
 
-Then, initialize the Elasticsearch users and groups required by docker-elk by executing the command:
-
-```sh
-docker-compose up setup
+7. Create a django project run the following
+```bash
+cd ./app
+django-admin startproject app
 ```
 
-If everything went well and the setup completed without error, start the other stack components:
-
-```sh
-docker-compose up
+8. Startapp in the django run the following
+```bash
+python manage.py startapp portfolio
+cd ..
 ```
 
-> [!NOTE]
-> You can also run all services in the background (detached mode) by appending the `-d` flag to the above command.
+9. Open the `settings.py` file which in `./app/app/settings.py` replace the following  in `setting.py`
+```python
+"""
+Django settings for app project.
 
-Give Kibana about a minute to initialize, then access the Kibana web UI by opening <http://localhost:5601> in a web
-browser and use the following (default) credentials to log in:
+Generated by 'django-admin startproject' using Django 5.1.
 
-* user: *elastic*
-* password: *changeme*
+For more information on this file, see
+https://docs.djangoproject.com/en/5.1/topics/settings/
 
-> [!NOTE]
-> Upon the initial startup, the `elastic`, `logstash_internal` and `kibana_system` Elasticsearch users are intialized
-> with the values of the passwords defined in the [`.env`](.env) file (_"changeme"_ by default). The first one is the
-> [built-in superuser][builtin-users], the other two are used by Kibana and Logstash respectively to communicate with
-> Elasticsearch. This task is only performed during the _initial_ startup of the stack. To change users' passwords
-> _after_ they have been initialized, please refer to the instructions in the next section.
+For the full list of settings and their values, see
+https://docs.djangoproject.com/en/5.1/ref/settings/
+"""
 
-### Initial setup
+from pathlib import Path
+import os
 
-#### Setting up user authentication
+# Build paths inside the project like this: BASE_DIR / 'subdir'.
+BASE_DIR = Path(__file__).resolve().parent.parent
 
-> [!NOTE]
-> Refer to [Security settings in Elasticsearch][es-security] to disable authentication.
 
-> [!WARNING]
-> Starting with Elastic v8.0.0, it is no longer possible to run Kibana using the bootstraped privileged `elastic` user.
+# Quick-start development settings - unsuitable for production
+# See https://docs.djangoproject.com/en/5.1/howto/deployment/checklist/
 
-The _"changeme"_ password set by default for all aforementioned users is **unsecure**. For increased security, we will
-reset the passwords of all aforementioned Elasticsearch users to random secrets.
+# SECURITY WARNING: keep the secret key used in production secret!
+SECRET_KEY = 'django-insecure-hu(tqq3c8+qmuuvsvn#py8@c%(^vmt5&5m6mhsr4j*1@62$7=+'
 
-1. Reset passwords for default users
+# SECURITY WARNING: don't run with debug turned on in production!
+DEBUG = True
 
-    The commands below reset the passwords of the `elastic`, `logstash_internal` and `kibana_system` users. Take note
-    of them.
+ALLOWED_HOSTS = ["*"]
 
-    ```sh
-    docker-compose exec elasticsearch bin/elasticsearch-reset-password --batch --user elastic
-    ```
 
-    ```sh
-    docker-compose exec elasticsearch bin/elasticsearch-reset-password --batch --user logstash_internal
-    ```
+# Application definition
 
-    ```sh
-    docker-compose exec elasticsearch bin/elasticsearch-reset-password --batch --user kibana_system
-    ```
+INSTALLED_APPS = [
+    'django.contrib.admin',
+    'django.contrib.auth',
+    'django.contrib.contenttypes',
+    'django.contrib.sessions',
+    'django.contrib.messages',
+    'django.contrib.staticfiles',
+    'portfolio',
+]
 
-    If the need for it arises (e.g. if you want to [collect monitoring information][ls-monitoring] through Beats and
-    other components), feel free to repeat this operation at any time for the rest of the [built-in
-    users][builtin-users].
+MIDDLEWARE = [
+    'django.middleware.security.SecurityMiddleware',
+    'django.contrib.sessions.middleware.SessionMiddleware',
+    'django.middleware.common.CommonMiddleware',
+    'django.middleware.csrf.CsrfViewMiddleware',
+    'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'django.contrib.messages.middleware.MessageMiddleware',
+    'django.middleware.clickjacking.XFrameOptionsMiddleware',
+]
 
-1. Replace usernames and passwords in configuration files
+ROOT_URLCONF = 'app.urls'
 
-    Replace the password of the `elastic` user inside the `.env` file with the password generated in the previous step.
-    Its value isn't used by any core component, but [extensions](#how-to-enable-the-provided-extensions) use it to
-    connect to Elasticsearch.
+TEMPLATES = [
+    {
+        'BACKEND': 'django.template.backends.django.DjangoTemplates',
+        'DIRS': [],
+        'APP_DIRS': True,
+        'OPTIONS': {
+            'context_processors': [
+                'django.template.context_processors.debug',
+                'django.template.context_processors.request',
+                'django.contrib.auth.context_processors.auth',
+                'django.contrib.messages.context_processors.messages',
+            ],
+        },
+    },
+]
 
-    > [!NOTE]
-    > In case you don't plan on using any of the provided [extensions](#how-to-enable-the-provided-extensions), or
-    > prefer to create your own roles and users to authenticate these services, it is safe to remove the
-    > `ELASTIC_PASSWORD` entry from the `.env` file altogether after the stack has been initialized.
+WSGI_APPLICATION = 'app.wsgi.application'
 
-    Replace the password of the `logstash_internal` user inside the `.env` file with the password generated in the
-    previous step. Its value is referenced inside the Logstash pipeline file (`logstash/pipeline/logstash.conf`).
 
-    Replace the password of the `kibana_system` user inside the `.env` file with the password generated in the previous
-    step. Its value is referenced inside the Kibana configuration file (`kibana/config/kibana.yml`).
+# Database
+# https://docs.djangoproject.com/en/5.1/ref/settings/#databases
 
-    See the [Configuration](#configuration) section below for more information about these configuration files.
+# DATABASES = {
+#     'default': {
+#         'ENGINE': 'django.db.backends.sqlite3',
+#         'NAME': BASE_DIR / 'db.sqlite3',
+#     }
+# }
 
-1. Restart Logstash and Kibana to re-connect to Elasticsearch using the new passwords
+# DATABASES = {
+#     'default': {
+#         'ENGINE': 'django.db.backends.postgresql',
+#         'NAME': 'postgres',
+#         'USER': 'postgres',
+#         'PASSWORD': 'postgres',
+#         'HOST': 'localhost',
+#         'PORT': '5432',
+#     }
+# }
 
-    ```sh
-    docker-compose up -d logstash kibana
-    ```
+DATABASES = {
+    'default': {
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': os.getenv('DB_NAME'),
+        'USER': os.getenv('POSTGRES_USER'),
+        'PASSWORD': os.getenv('POSTGRES_PASSWORD'),
+        'HOST': os.getenv('DB_HOST'),
+        'PORT': '5432',
+    }
+}
+# Password validation
+# https://docs.djangoproject.com/en/5.1/ref/settings/#auth-password-validators
 
-> [!NOTE]
-> Learn more about the security of the Elastic stack at [Secure the Elastic Stack][sec-cluster].
+AUTH_PASSWORD_VALIDATORS = [
+    {
+        'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',
+    },
+    {
+        'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',
+    },
+    {
+        'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator',
+    },
+    {
+        'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',
+    },
+]
 
-#### Injecting data
 
-Launch the Kibana web UI by opening <http://localhost:5601> in a web browser, and use the following credentials to log
-in:
+# Internationalization
+# https://docs.djangoproject.com/en/5.1/topics/i18n/
 
-* user: *elastic*
-* password: *\<your generated elastic password>*
+LANGUAGE_CODE = 'en-us'
 
-Now that the stack is fully configured, you can go ahead and inject some log entries.
+TIME_ZONE = 'UTC'
 
-The shipped Logstash configuration allows you to send data over the TCP port 50000. For example, you can use one of the
-following commands — depending on your installed version of `nc` (Netcat) — to ingest the content of the log file
-`/path/to/logfile.log` in Elasticsearch, via Logstash:
+USE_I18N = True
 
-```sh
-# Execute `nc -h` to determine your `nc` version
+USE_TZ = True
 
-cat /path/to/logfile.log | nc -q0 localhost 50000          # BSD
-cat /path/to/logfile.log | nc -c localhost 50000           # GNU
-cat /path/to/logfile.log | nc --send-only localhost 50000  # nmap
+
+# Static files (CSS, JavaScript, Images)
+# https://docs.djangoproject.com/en/5.1/howto/static-files/
+
+STATIC_URL = 'static/'
+
+# Default primary key field type
+# https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field
+
+DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+# STATIC_URL = "/static/"
+# STATIC_ROOT = BASE_DIR / "staticfiles"
+
+# MEDIA_URL = "/media/"
+# MEDIA_ROOT = BASE_DIR / "mediafiles"
+
+# SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
+```
+- Now to create views open `./app/portfolio/views.py` and replace the `views.py` with the following
+```python
+from django.shortcuts import render
+from django.core.files.storage import FileSystemStorage
+
+
+def image_upload(request):
+    if request.method == "POST" and request.FILES["image_file"]:
+        image_file = request.FILES["image_file"]
+        fs = FileSystemStorage()
+        filename = fs.save(image_file.name, image_file)
+        image_url = fs.url(filename)
+        print(image_url)
+        return render(request, "upload.html", {
+            "image_url": image_url
+        })
+    return render(request, "upload.html")
 ```
 
-You can also load the sample data provided by your Kibana installation.
+- Now open  `./app/app/urls.py` and replace with this
+```python
+from django.contrib import admin
+from django.urls import path
+from django.conf import settings
+from django.conf.urls.static import static
 
-### Cleanup
+from portfolio.views import image_upload
 
-Elasticsearch data is persisted inside a volume by default.
+urlpatterns = [
+    path("", image_upload, name="upload"),
+    path("admin/", admin.site.urls),
+]
 
-In order to entirely shutdown the stack and remove all persisted data, use the following Docker Compose command:
-
-```sh
-docker-compose down -v
+if bool(settings.DEBUG):
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
 ```
 
-### Version selection
-
-This repository stays aligned with the latest version of the Elastic stack. The `main` branch tracks the current major
-version (8.x).
-
-To use a different version of the core Elastic components, simply change the version number inside the [`.env`](.env)
-file. If you are upgrading an existing stack, remember to rebuild all container images using the `docker-compose build`
-command.
-
-> [!IMPORTANT]
-> Always pay attention to the [official upgrade instructions][upgrade] for each individual component before performing a
-> stack upgrade.
-
-Older major versions are also supported on separate branches:
-
-* [`release-7.x`](https://github.com/deviantony/docker-elk/tree/release-7.x): 7.x series
-* [`release-6.x`](https://github.com/deviantony/docker-elk/tree/release-6.x): 6.x series (End-of-life)
-* [`release-5.x`](https://github.com/deviantony/docker-elk/tree/release-5.x): 5.x series (End-of-life)
-
-## Configuration
-
-> [!IMPORTANT]
-> Configuration is not dynamically reloaded, you will need to restart individual components after any configuration
-> change.
-
-### How to configure Elasticsearch
-
-The Elasticsearch configuration is stored in [`elasticsearch/config/elasticsearch.yml`][config-es].
-
-You can also specify the options you want to override by setting environment variables inside the Compose file:
-
-```yml
-elasticsearch:
-
-  environment:
-    network.host: _non_loopback_
-    cluster.name: my-cluster
+- Now create `templates` directory inside for html 
+```bash
+mkdir -p ./app/portfolio/templates
+touch ./app/portfolio/templates/upload.html
 ```
 
-Please refer to the following documentation page for more details about how to configure Elasticsearch inside Docker
-containers: [Install Elasticsearch with Docker][es-docker].
+- Copy the following to `./app/portfolio/templates/upload.html` 
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <title>Nitesh Rijal - DevOps Freelancer | Tutor | Researcher</title>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.4.1/css/bootstrap.min.css">
+  <link href="https://fonts.googleapis.com/css?family=Montserrat" rel="stylesheet" type="text/css">
+  <link href="https://fonts.googleapis.com/css?family=Lato" rel="stylesheet" type="text/css">
+  <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+  <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.4.1/js/bootstrap.min.js"></script>
+  <style>
+  body {
+    font: 400 15px Lato, sans-serif;
+    line-height: 1.8;
+    color: #818181;
+  }
+  h2 {
+    font-size: 24px;
+    text-transform: uppercase;
+    color: #303030;
+    font-weight: 600;
+    margin-bottom: 30px;
+  }
+  h4 {
+    font-size: 19px;
+    line-height: 1.375em;
+    color: #303030;
+    font-weight: 400;
+    margin-bottom: 30px;
+  }  
+  .jumbotron {
+    background-color: #f4511e;
+    color: #fff;
+    padding: 100px 25px;
+    font-family: Montserrat, sans-serif;
+    background-image: url('/api/placeholder/1200/400');
+    background-size: cover;
+    background-position: center;
+  }
+  .container-fluid {
+    padding: 60px 50px;
+  }
+  .bg-grey {
+    background-color: #f6f6f6;
+  }
+  .logo-small {
+    color: #f4511e;
+    font-size: 50px;
+  }
+  .logo {
+    color: #f4511e;
+    font-size: 200px;
+  }
+  .thumbnail {
+    padding: 0 0 15px 0;
+    border: none;
+    border-radius: 0;
+  }
+  .thumbnail img {
+    width: 100%;
+    height: 200px;
+    margin-bottom: 10px;
+    object-fit: cover;
+  }
+  .navbar {
+    margin-bottom: 0;
+    background-color: #f4511e;
+    z-index: 9999;
+    border: 0;
+    font-size: 12px !important;
+    line-height: 1.42857143 !important;
+    letter-spacing: 4px;
+    border-radius: 0;
+    font-family: Montserrat, sans-serif;
+    transition: background-color 0.3s ease;
+  }
+  .navbar li a, .navbar .navbar-brand {
+    color: #fff !important;
+  }
+  .navbar-nav li a:hover, .navbar-nav li.active a {
+    color: #f4511e !important;
+    background-color: #fff !important;
+  }
+  .navbar-default .navbar-toggle {
+    border-color: transparent;
+    color: #fff !important;
+  }
+  footer {
+    background-color: #f4511e;
+    color: #fff;
+    padding: 25px;
+  }
+  footer .glyphicon {
+    font-size: 20px;
+    margin-bottom: 20px;
+    color: #fff;
+  }
+  .slideanim {visibility:hidden;}
+  .slide {
+    animation-name: slide;
+    -webkit-animation-name: slide;
+    animation-duration: 1s;
+    -webkit-animation-duration: 1s;
+    visibility: visible;
+  }
+  @keyframes slide {
+    0% {
+      opacity: 0;
+      transform: translateY(70%);
+    } 
+    100% {
+      opacity: 1;
+      transform: translateY(0%);
+    }
+  }
+  .skill-bar {
+    width: 100%;
+    background-color: #ddd;
+    margin-bottom: 15px;
+  }
+  .skill {
+    text-align: right;
+    padding-right: 20px;
+    line-height: 30px;
+    color: white;
+  }
+  .devops {width: 90%; background-color: #04AA6D;}
+  .cloud {width: 85%; background-color: #2196F3;}
+  .cicd {width: 80%; background-color: #f44336;}
+  .research {width: 75%; background-color: #808080;}
+  </style>
+</head>
+<body id="myPage" data-spy="scroll" data-target=".navbar" data-offset="60">
 
-### How to configure Kibana
+<nav class="navbar navbar-default navbar-fixed-top">
+  <div class="container">
+    <div class="navbar-header">
+      <button type="button" class="navbar-toggle" data-toggle="collapse" data-target="#myNavbar">
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>                        
+      </button>
+      <a class="navbar-brand" href="#myPage">NR</a>
+    </div>
+    <div class="collapse navbar-collapse" id="myNavbar">
+      <ul class="nav navbar-nav navbar-right">
+        <li><a href="#about">ABOUT</a></li>
+        <li><a href="#skills">SKILLS</a></li>
+        <li><a href="#services">SERVICES</a></li>
+        <li><a href="#portfolio">PORTFOLIO</a></li>
+        <li><a href="#contact">CONTACT</a></li>
+      </ul>
+    </div>
+  </div>
+</nav>
 
-The Kibana default configuration is stored in [`kibana/config/kibana.yml`][config-kbn].
+<div class="jumbotron text-center">
+  <h1>Nitesh Rijal</h1> 
+  <p>DevOps Freelancer | Tutor | Researcher</p> 
+</div>
 
-You can also specify the options you want to override by setting environment variables inside the Compose file:
+<div id="about" class="container-fluid">
+  <div class="row">
+    <div class="col-sm-8">
+      <h2>About Me</h2>
+      <h4>Passionate about streamlining development processes and sharing knowledge</h4>
+      <p>Hello, I'm Nitesh Rijal, a DevOps enthusiast with a strong background in computer engineering. I specialize in bridging the gap between development and operations, optimizing workflows, and implementing robust CI/CD pipelines. As a tutor, I enjoy sharing my knowledge and helping others grasp complex DevOps concepts. My research focuses on cutting-edge DevOps practices and their impact on software development lifecycles.</p>
+    </div>
+    <div class="col-sm-4">
+      <img src="/api/placeholder/300/300" class="img-circle img-responsive" alt="Profile Picture">
+    </div>
+  </div>
+</div>
 
-```yml
-kibana:
+<div id="skills" class="container-fluid bg-grey">
+  <h2 class="text-center">SKILLS</h2>
+  <div class="row">
+    <div class="col-sm-6">
+      <h4>DevOps</h4>
+      <div class="skill-bar">
+        <div class="skill devops">90%</div>
+      </div>
+      <h4>Cloud Technologies</h4>
+      <div class="skill-bar">
+        <div class="skill cloud">85%</div>
+      </div>
+    </div>
+    <div class="col-sm-6">
+      <h4>CI/CD</h4>
+      <div class="skill-bar">
+        <div class="skill cicd">80%</div>
+      </div>
+      <h4>Research & Analysis</h4>
+      <div class="skill-bar">
+        <div class="skill research">75%</div>
+      </div>
+    </div>
+  </div>
+</div>
 
-  environment:
-    SERVER_NAME: kibana.example.org
+<div id="services" class="container-fluid text-center">
+  <h2>SERVICES</h2>
+  <h4>What I offer</h4>
+  <br>
+  <div class="row slideanim">
+    <div class="col-sm-4">
+      <span class="glyphicon glyphicon-cog logo-small"></span>
+      <h4>DevOps Consulting</h4>
+      <p>Streamline your development process with expert DevOps solutions</p>
+    </div>
+    <div class="col-sm-4">
+      <span class="glyphicon glyphicon-education logo-small"></span>
+      <h4>DevOps Tutoring</h4>
+      <p>Learn DevOps concepts and practices from an experienced professional</p>
+    </div>
+    <div class="col-sm-4">
+      <span class="glyphicon glyphicon-search logo-small"></span>
+      <h4>DevOps Research</h4>
+      <p>Stay ahead with cutting-edge DevOps research and analysis</p>
+    </div>
+  </div>
+</div>
+
+<div id="portfolio" class="container-fluid text-center bg-grey">
+  <h2>PORTFOLIO</h2>
+  <h4>Recent projects and achievements</h4>
+  <div class="row text-center slideanim">
+    <div class="col-sm-4">
+      <div class="thumbnail">
+        <img src="/api/placeholder/400/300" alt="CI/CD Pipeline">
+        <p><strong>CI/CD Pipeline Optimization</strong></p>
+        <p>Reduced deployment time by 70% for a large e-commerce platform</p>
+      </div>
+    </div>
+    <div class="col-sm-4">
+      <div class="thumbnail">
+        <img src="/api/placeholder/400/300" alt="Cloud Migration">
+        <p><strong>Cloud Migration Strategy</strong></p>
+        <p>Successfully migrated a monolithic application to a microservices architecture on AWS</p>
+      </div>
+    </div>
+    <div class="col-sm-4">
+      <div class="thumbnail">
+        <img src="/api/placeholder/400/300" alt="DevOps Workshop">
+        <p><strong>DevOps Workshop Series</strong></p>
+        <p>Conducted a series of workshops, training over 200 professionals in DevOps practices</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="contact" class="container-fluid">
+  <h2 class="text-center">CONTACT</h2>
+  <div class="row">
+    <div class="col-sm-5">
+      <p>Contact me for DevOps solutions, tutoring, or research collaboration.</p>
+      <p><span class="glyphicon glyphicon-map-marker"></span> Kathmandu, Nepal</p>
+      <p><span class="glyphicon glyphicon-phone"></span> +977 1234567890</p>
+      <p><span class="glyphicon glyphicon-envelope"></span> nitesh.rijal@example.com</p>
+    </div>
+    <div class="col-sm-7 slideanim">
+      <div class="row">
+        <div class="col-sm-6 form-group">
+          <input class="form-control" id="name" name="name" placeholder="Name" type="text" required>
+        </div>
+        <div class="col-sm-6 form-group">
+          <input class="form-control" id="email" name="email" placeholder="Email" type="email" required>
+        </div>
+      </div>
+      <textarea class="form-control" id="comments" name="comments" placeholder="Comment" rows="5"></textarea><br>
+      <div class="row">
+        <div class="col-sm-12 form-group">
+          <button class="btn btn-default pull-right" type="submit">Send</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<footer class="container-fluid text-center">
+  <a href="#myPage" title="To Top">
+    <span class="glyphicon glyphicon-chevron-up"></span>
+  </a>
+  <p>&copy; 2024 Nitesh Rijal. All rights reserved.</p>
+</footer>
+
+<script>
+$(document).ready(function(){
+  $(".navbar a, footer a[href='#myPage']").on('click', function(event) {
+    if (this.hash !== "") {
+      event.preventDefault();
+      var hash = this.hash;
+      $('html, body').animate({
+        scrollTop: $(hash).offset().top
+      }, 900, function(){
+        window.location.hash = hash;
+      });
+    }
+  });
+  
+  $(window).scroll(function() {
+    $(".slideanim").each(function(){
+      var pos = $(this).offset().top;
+      var winTop = $(window).scrollTop();
+        if (pos < winTop + 600) {
+          $(this).addClass("slide");
+        }
+    });
+  });
+
+  $(window).scroll(function() {
+    if ($(this).scrollTop() > 50) {
+      $('.navbar').css('background-color', 'rgba(244, 81, 30, 0.9)');
+    } else {
+      $('.navbar').css('background-color', '#f4511e');
+    }
+  });
+})
+</script>
+
+</body>
+</html>
 ```
 
-Please refer to the following documentation page for more details about how to configure Kibana inside Docker
-containers: [Install Kibana with Docker][kbn-docker].
+- Now create a `./app/Dockerfile`  and paste the following in it
+```Dockerfile
+FROM python:3.12.5-alpine
 
-### How to configure Logstash
+WORKDIR /usr/src/app
 
-The Logstash configuration is stored in [`logstash/config/logstash.yml`][config-ls].
+ENV PYTHONDONTWRITEBYTECODE 1
+ENV PYTHONUNBUFFERED 1
 
-You can also specify the options you want to override by setting environment variables inside the Compose file:
+# psycopg2 dependencies
 
-```yml
-logstash:
+RUN apk update \
+    && apk add postgresql-dev gcc python3-dev musl-dev
 
-  environment:
-    LOG_LEVEL: debug
+RUN pip install --upgrade pip
+COPY ./requirements.txt .
+RUN pip install -r requirements.txt
+
+# copy for entrypoint
+COPY ./entrypoint.sh . 
+RUN sed -i 's/\r$//g' /usr/src/app/entrypoint.sh
+RUN chmod +x /usr/src/app/entrypoint.sh
+
+COPY . .
+
+
+ENTRYPOINT ["/usr/src/app/entrypoint.sh"]
 ```
 
-Please refer to the following documentation page for more details about how to configure Logstash inside Docker
-containers: [Configuring Logstash for Docker][ls-docker].
+- To Create a entrypoint create a file `./app/entrypoint.sh` and paste the following
+```bash
+#!/bin/sh
 
-### How to disable paid features
+if ["$DATABASE" = "postgres"]
+then
+	echo "Waiting for postgres..."
+	
+	while ! nc -z $DB_HOST 5432; do
+	    sleep 0.1
+	done
+	echo "Postgres started"
 
-You can cancel an ongoing trial before its expiry date — and thus revert to a basic license — either from the [License
-Management][license-mngmt] panel of Kibana, or using Elasticsearch's `start_basic` [Licensing API][license-apis]. Please
-note that the second option is the only way to recover access to Kibana if the license isn't either switched to `basic`
-or upgraded before the trial's expiry date.
+fi
 
-Changing the license type by switching the value of Elasticsearch's `xpack.license.self_generated.type` setting from
-`trial` to `basic` (see [License settings][license-settings]) will only work **if done prior to the initial setup.**
-After a trial has been started, the loss of features from `trial` to `basic` _must_ be acknowledged using one of the two
-methods described in the first paragraph.
+python manage.py flush --no-input
+python manage.py migrate
 
-### How to scale out the Elasticsearch cluster
-
-Follow the instructions from the Wiki: [Scaling out Elasticsearch](https://github.com/deviantony/docker-elk/wiki/Elasticsearch-cluster)
-
-### How to re-execute the setup
-
-To run the setup container again and re-initialize all users for which a password was defined inside the `.env` file,
-simply "up" the `setup` Compose service again:
-
-```console
-$ docker-compose up setup
- ⠿ Container docker-elk-elasticsearch-1  Running
- ⠿ Container docker-elk-setup-1          Created
-Attaching to docker-elk-setup-1
-...
-docker-elk-setup-1  | [+] User 'monitoring_internal'
-docker-elk-setup-1  |    ⠿ User does not exist, creating
-docker-elk-setup-1  | [+] User 'beats_system'
-docker-elk-setup-1  |    ⠿ User exists, setting password
-docker-elk-setup-1 exited with code 0
+exec "$@"
 ```
 
-### How to reset a password programmatically
-
-If for any reason your are unable to use Kibana to change the password of your users (including [built-in
-users][builtin-users]), you can use the Elasticsearch API instead and achieve the same result.
-
-In the example below, we reset the password of the `elastic` user (notice "/user/elastic" in the URL):
-
-```sh
-curl -XPOST -D- 'http://localhost:9200/_security/user/elastic/_password' \
-    -H 'Content-Type: application/json' \
-    -u elastic:<your current elastic password> \
-    -d '{"password" : "<your new password>"}'
+- Run the following to give permission to `entrypoint.sh` 
+```bash
+chmod +x entrypoint.sh
 ```
 
-## Extensibility
-
-### How to add plugins
-
-To add plugins to any ELK component you have to:
-
-1. Add a `RUN` statement to the corresponding `Dockerfile` (eg. `RUN logstash-plugin install logstash-filter-json`)
-1. Add the associated plugin code configuration to the service configuration (eg. Logstash input/output)
-1. Rebuild the images using the `docker-compose build` command
-
-### How to enable the provided extensions
-
-A few extensions are available inside the [`extensions`](extensions) directory. These extensions provide features which
-are not part of the standard Elastic stack, but can be used to enrich it with extra integrations.
-
-The documentation for these extensions is provided inside each individual subdirectory, on a per-extension basis. Some
-of them require manual changes to the default ELK configuration.
-
-## JVM tuning
-
-### How to specify the amount of memory used by a service
-
-The startup scripts for Elasticsearch and Logstash can append extra JVM options from the value of an environment
-variable, allowing the user to adjust the amount of memory that can be used by each component:
-
-| Service       | Environment variable |
-|---------------|----------------------|
-| Elasticsearch | ES_JAVA_OPTS         |
-| Logstash      | LS_JAVA_OPTS         |
-
-To accommodate environments where memory is scarce (Docker Desktop for Mac has only 2 GB available by default), the Heap
-Size allocation is capped by default in the `docker-compose.yml` file to 512 MB for Elasticsearch and 256 MB for
-Logstash. If you want to override the default JVM configuration, edit the matching environment variable(s) in the
-`docker-compose.yml` file.
-
-For example, to increase the maximum JVM Heap Size for Logstash:
-
-```yml
-logstash:
-
-  environment:
-    LS_JAVA_OPTS: -Xms1g -Xmx1g
+- Create a docker repository and do a docker login , build and push image to docker repo make sure it's public replace `<your-docker-repo>` with your repo name
+```bash
+docker build -t <your-docker-repo>:latest
+docker push <your-docker-repo>:latest
+```
+# Kubernetes
+- Run the following to create a directory
+```bash
+mkdir -p ./kubernetes/django
+mkdir -p ./kubernetes/postgres
 ```
 
-When these options are not set:
-
-* Elasticsearch starts with a JVM Heap Size that is [determined automatically][es-heap].
-* Logstash starts with a fixed JVM Heap Size of 1 GB.
-
-### How to enable a remote JMX connection to a service
-
-As for the Java Heap memory (see above), you can specify JVM options to enable JMX and map the JMX port on the Docker
-host.
-
-Update the `{ES,LS}_JAVA_OPTS` environment variable with the following content (I've mapped the JMX service on the port
-18080, you can change that). Do not forget to update the `-Djava.rmi.server.hostname` option with the IP address of your
-Docker host (replace **DOCKER_HOST_IP**):
-
-```yml
-logstash:
-
-  environment:
-    LS_JAVA_OPTS: -Dcom.sun.management.jmxremote -Dcom.sun.management.jmxremote.ssl=false -Dcom.sun.management.jmxremote.authenticate=false -Dcom.sun.management.jmxremote.port=18080 -Dcom.sun.management.jmxremote.rmi.port=18080 -Djava.rmi.server.hostname=DOCKER_HOST_IP -Dcom.sun.management.jmxremote.local.only=false
+- Now to create a postgres persisent volume create `./kubernetes/postgres/pv.yaml` copy and paste the following
+```yaml
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: postgres-pv
+spec:
+  capacity:
+    storage: 10Gi
+  accessModes:
+    - ReadWriteOnce
+  hostPath:
+    path: /data/postgres
 ```
 
-## Going further
+- Now to create a postgres persisent volume claim create `./kubernetes/postgres/pvc.yaml` copy and paste the following
+```yaml
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+```
 
-### Plugins and integrations
+- To create a secret create `./kubernetes/postgres/secret.yaml` paste the following in it
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: postgres-secret
+type: Opaque
+data:
+  POSTGRES_USER: aGVsbG9fZGlhbmdv  # base64 encoded value for 'hello_django'
+  POSTGRES_PASSWORD: aGVsbG9fZGlhbmdv  # base64 encoded value for 'hello_django'
+  POSTGRES_DB: aGVsbG9fZGlhbmdv  # base64 encoded value for 'hello_django_dev'
+```
 
-See the following Wiki pages:
+- To create the deployment create `./kubernetes/postgres/deployment.yaml` paste the following in it
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+      - name: postgres
+        image: postgres:16
+        env:
+        - name: POSTGRES_USER
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secret
+              key: POSTGRES_USER
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secret
+              key: POSTGRES_PASSWORD
+        - name: POSTGRES_DB
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secret
+              key: POSTGRES_DB
+        ports:
+        - containerPort: 5432
+        volumeMounts:
+        - mountPath: /var/lib/postgresql/data
+          name: postgres-storage
+      volumes:
+      - name: postgres-storage
+        persistentVolumeClaim:
+          claimName: postgres-pvc
+```
 
-* [External applications](https://github.com/deviantony/docker-elk/wiki/External-applications)
-* [Popular integrations](https://github.com/deviantony/docker-elk/wiki/Popular-integrations)
+- Now To service create `./kubernetes/postgres/service.yaml` paste the following in it
 
-[elk-stack]: https://www.elastic.co/what-is/elk-stack
-[elastic-docker]: https://www.docker.elastic.co/
-[subscriptions]: https://www.elastic.co/subscriptions
-[es-security]: https://www.elastic.co/guide/en/elasticsearch/reference/current/security-settings.html
-[license-settings]: https://www.elastic.co/guide/en/elasticsearch/reference/current/license-settings.html
-[license-mngmt]: https://www.elastic.co/guide/en/kibana/current/managing-licenses.html
-[license-apis]: https://www.elastic.co/guide/en/elasticsearch/reference/current/licensing-apis.html
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: django-service
+spec:
+  selector:
+    app: django
+  ports:
+    - protocol: TCP
+      port: 8000
+      targetPort: 8000
+  type: NodePort  # Change to LoadBalancer if you want external access
+```
 
-[elastdocker]: https://github.com/sherifabdlnaby/elastdocker
+- Now create a django deployment `./kubernetes/django/deployment.yaml` and paste the following in it don't forget to replace `<your-image>`
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: django-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: django
+  template:
+    metadata:
+      labels:
+        app: django
+    spec:
+      containers:
+      - name: django
+        image: <your-image>:latest # replace the image here
+        command: ["sh", "-c", "python /usr/src/app/manage.py runserver 0.0.0.0:8000"]
+        ports:
+        - containerPort: 8000
+        env:
+        - name: DATABASE
+          value: "postgres"
+        - name: DB_HOST
+          value: "db"  # This refers to the PostgreSQL service
+        - name: POSTGRES_USER
+          value: "hello_django"
+        - name: POSTGRES_PASSWORD
+          value: "hello_django"
+        - name: DB_NAME
+          value: "hello_django_dev"
 
-[docker-install]: https://docs.docker.com/get-docker/
-[compose-install]: https://docs.docker.com/compose/install/
-[compose-v2]: https://docs.docker.com/compose/compose-v2/
-[linux-postinstall]: https://docs.docker.com/engine/install/linux-postinstall/
+```
 
-[bootstrap-checks]: https://www.elastic.co/guide/en/elasticsearch/reference/current/bootstrap-checks.html
-[es-sys-config]: https://www.elastic.co/guide/en/elasticsearch/reference/current/system-config.html
-[es-heap]: https://www.elastic.co/guide/en/elasticsearch/reference/current/important-settings.html#heap-size-settings
+- Now to create service create `./kubernetes/django/service.yaml`  and paste the following in it
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: django-service
+spec:
+  selector:
+    app: django
+  ports:
+    - protocol: TCP
+      port: 8000
+      targetPort: 8000
+  type: NodePort  # Change to LoadBalancer if you want external access
+```
 
-[win-filesharing]: https://docs.docker.com/desktop/settings/windows/#file-sharing
-[mac-filesharing]: https://docs.docker.com/desktop/settings/mac/#file-sharing
+- Now to create ingress create `./kubernetes/django/ingress.yaml`  and paste the following in it replace `$HOME` to your home path in `filebeat` service
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: django-ingress
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: django.k8s.dev
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: django-service
+                port:
+                  number: 8000
+```
 
-[builtin-users]: https://www.elastic.co/guide/en/elasticsearch/reference/current/built-in-users.html
-[ls-monitoring]: https://www.elastic.co/guide/en/logstash/current/monitoring-with-metricbeat.html
-[sec-cluster]: https://www.elastic.co/guide/en/elasticsearch/reference/current/secure-cluster.html
+# ELK Stack
 
-[connect-kibana]: https://www.elastic.co/guide/en/kibana/current/connect-to-elasticsearch.html
-[index-pattern]: https://www.elastic.co/guide/en/kibana/current/index-patterns.html
+**We will utilize the following repo https://github.com/deviantony/docker-elk**
 
-[config-es]: ./elasticsearch/config/elasticsearch.yml
-[config-kbn]: ./kibana/config/kibana.yml
-[config-ls]: ./logstash/config/logstash.yml
+- Run the following to fetch to your repo
+```bash
+git clone https://github.com/deviantony/docker-elk
+cd docker-elk
+rm -rf .git
+cd ..
+mv docker-elk docker
+```
 
-[es-docker]: https://www.elastic.co/guide/en/elasticsearch/reference/current/docker.html
-[kbn-docker]: https://www.elastic.co/guide/en/kibana/current/docker.html
-[ls-docker]: https://www.elastic.co/guide/en/logstash/current/docker-config.html
+- Replace the `./docker/docker-compose.yml` with the following 
+```yaml
+version: '3.7'
 
-[upgrade]: https://www.elastic.co/guide/en/elasticsearch/reference/current/setup-upgrade.html
+services:
+  setup:
+    profiles:
+      - setup
+    build:
+      context: setup/
+      args:
+        ELASTIC_VERSION: ${ELASTIC_VERSION}
+    init: true
+    volumes:
+      - ./setup/entrypoint.sh:/entrypoint.sh:ro,Z
+      - ./setup/lib.sh:/lib.sh:ro,Z
+      - ./setup/roles:/roles:ro,Z
+    environment:
+      ELASTIC_PASSWORD: ${ELASTIC_PASSWORD:-}
+      LOGSTASH_INTERNAL_PASSWORD: ${LOGSTASH_INTERNAL_PASSWORD:-}
+      KIBANA_SYSTEM_PASSWORD: ${KIBANA_SYSTEM_PASSWORD:-}
+      METRICBEAT_INTERNAL_PASSWORD: ${METRICBEAT_INTERNAL_PASSWORD:-}
+      FILEBEAT_INTERNAL_PASSWORD: ${FILEBEAT_INTERNAL_PASSWORD:-}
+      HEARTBEAT_INTERNAL_PASSWORD: ${HEARTBEAT_INTERNAL_PASSWORD:-}
+      MONITORING_INTERNAL_PASSWORD: ${MONITORING_INTERNAL_PASSWORD:-}
+      BEATS_SYSTEM_PASSWORD: ${BEATS_SYSTEM_PASSWORD:-}
+    networks:
+      - elk
+    depends_on:
+      - elasticsearch
+
+  elasticsearch:
+    build:
+      context: elasticsearch/
+      args:
+        ELASTIC_VERSION: ${ELASTIC_VERSION}
+    volumes:
+      - ./elasticsearch/config/elasticsearch.yml:/usr/share/elasticsearch/config/elasticsearch.yml:ro,Z
+      - elasticsearch:/usr/share/elasticsearch/data:Z
+    ports:
+      - 9200:9200
+      - 9300:9300
+    environment:
+      node.name: elasticsearch
+      ES_JAVA_OPTS: -Xms512m -Xmx512m
+      ELASTIC_PASSWORD: ${ELASTIC_PASSWORD:-}
+      discovery.type: single-node
+    networks:
+      - elk
+    restart: unless-stopped
+
+  logstash:
+    build:
+      context: logstash/
+      args:
+        ELASTIC_VERSION: ${ELASTIC_VERSION}
+    volumes:
+      - ./logstash/config/logstash.yml:/usr/share/logstash/config/logstash.yml:ro,Z
+      - ./logstash/pipeline:/usr/share/logstash/pipeline:ro,Z
+    ports:
+      - 5044:5044
+      - 50000:50000/tcp
+      - 50000:50000/udp
+      - 9600:9600
+    environment:
+      LS_JAVA_OPTS: -Xms256m -Xmx256m
+      LOGSTASH_INTERNAL_PASSWORD: ${LOGSTASH_INTERNAL_PASSWORD:-}
+    networks:
+      - elk
+    depends_on:
+      - elasticsearch
+    restart: unless-stopped
+
+  kibana:
+    build:
+      context: kibana/
+      args:
+        ELASTIC_VERSION: ${ELASTIC_VERSION}
+    volumes:
+      - ./kibana/config/kibana.yml:/usr/share/kibana/config/kibana.yml:ro,Z
+    ports:
+      - 5601:5601
+    environment:
+      KIBANA_SYSTEM_PASSWORD: ${KIBANA_SYSTEM_PASSWORD:-}
+    networks:
+      - elk
+    depends_on:
+      - elasticsearch
+    restart: unless-stopped
+
+  filebeat:
+    image: docker.elastic.co/beats/filebeat:8.8.1
+    volumes:
+      - $HOME/kubernetes-logs:/usr/share/filebeat/logs  # Replace $HOME to your home path
+      - ./filebeat/filebeat.yml:/usr/share/filebeat/filebeat.yml
+    networks:
+      - elk
+    depends_on:
+      - elasticsearch
+    restart: unless-stopped
+    
+
+networks:
+  elk:
+    driver: bridge
+
+volumes:
+  elasticsearch:
+```
+
+- TO Create a directory for `filebeat` run the following 
+```bash
+mkdir -p ./docker/filebeat
+```
+
+- Create a filebeat config `./docker-elk/filebeat/filebeat.yml` and paste the following in it
+```yaml
+filebeat.inputs:
+  - type: log
+    paths:
+      - /usr/share/filebeat/logs/*.log
+    # You can add more configuration here if needed
+
+output.elasticsearch:
+  hosts: ["http://elasticsearch:9200"]
+  username: "elastic"
+  password: "changeme"
+
+```
+
+- Replace logstash.conf file in `./docker-elk/logstash/pipeline/logstash.conf` to this 
+```json
+input {
+	file {
+    path => "/Users/niteshrijal/kubernetes-logs/*.log"
+    start_position => "beginning"
+    sincedb_path => "/dev/null"  # Ensures that Logstash reads all logs every time it starts
+    codec => "plain"
+  }
+	beats {
+		port => 5044
+	}
+
+	tcp {
+		port => 50000
+	}
+}
+
+## Add your filters / logstash plugins configuration here
+
+output {
+	elasticsearch {
+		hosts => "elasticsearch:9200"
+		user => "logstash_internal"
+		password => "${LOGSTASH_INTERNAL_PASSWORD}"
+	}
+}
+
+```
+
+- Now create a script to fetch logs from the kubernetes pods `./logforwarder.sh` and paste the following in it
+```bash
+#!/bin/bash
+
+# Configuration
+LOG_DIR="$HOME/kubernetes-logs"
+TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")
+
+# Ensure the log directory exists
+mkdir -p "$LOG_DIR"
+
+# Function to fetch logs for a deployment
+fetch_logs() {
+    local deployment=$1
+    local label=$2
+    local pod_name=$(kubectl get pods -l "app=$label" -o jsonpath='{.items[0].metadata.name}')
+
+    if [ -z "$pod_name" ]; then
+        echo "No pod found for deployment: $deployment"
+        return 1
+    fi
+
+    echo "Fetching logs for $deployment (pod: $pod_name)"
+    kubectl logs "$pod_name" > "$LOG_DIR/${deployment}_$TIMESTAMP.log"
+}
+
+# Infinite loop to run the script every 30 seconds
+while true; do
+    # Fetch logs for django-deployment
+    fetch_logs "django-deployment" "django"
+
+    # Fetch logs for postgres-deployment
+    fetch_logs "postgres-deployment" "postgres"
+
+    # Wait for 30 seconds
+    sleep 30
+done
+
+
+```
+
+- Now create the cron job for the mac to grab logs  create a cron `./cron.xml` paste the following in it replace the `path-to-logforwarder.sh` to actual path of `logforwarder.sh` and replace the `user` to actual user of mac
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.user.logforwarder</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/user/logforwarder.sh</string>
+    </array>
+    <key>KeepAlive</key>
+    <true/>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>StartInterval</key>
+    <integer>30</integer>
+</dict>
+</plist>
+```
+# Gitlab 
+
+**Let's Start Creating an Instance with minimum of `2vCPU` and `4GB` of RAM**
+
+- Signin to AWS Console navigate to EC2 Dashboard
+- Click on **Launch Instance** Give it a name like **gitlab-server**
+- On **Application and OS Images (Amazon Machine Image)** select **Ubuntu** On instance type **Instance type** select **t3.medium**
+- On **Key Pair** select your key pair or create new key pair.
+- On **Security Groups**  allow port 22 to anywhere and port 80 to anywhere
+- On **Configure storage** make it like `30GB` 
+- Then click on **Launch Instance**
+- Now your instance is launched click on connect to instance and choose **ssh client**  no terminal navigate to Downloads folder `cd ~/Downloads` then copy the command for *chmod 400 xxx* then run it terminal and after copy the `ssh` command and run to connect your instance
+- After you connect run the following to update and refresh the cache
+```bash
+sudo apt update
+```
+- TO create swap space create `nano ~/swap.sh` and paste the following in it
+```bash
+free -h
+sudo swapon --show
+df -h
+sudo fallocate -l 2G /swapfile
+#For Centos
+#sudo dd if=/dev/zero of=/swapfile count=2048 bs=1MiB
+ls -lh /swapfile
+sudo chmod 600 /swapfile
+sudo mkswap /swapfile
+ls -lh /swapfile
+ sudo swapon /swapfile
+sudo swapon --show
+free -h
+sudo cp /etc/fstab /etc/fstab.bak
+echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+echo 'vm.swappiness=10' | sudo tee -a /etc/sysctl.conf
+echo 'vm.vfs_cache_pressure=50' | sudo tee -a /etc/sysctl.conf
+```
+Press `ctrl + x` and Press `Enter` and `y`.
+
+- After that run the following to create swap space
+```bash
+sudo sh swap.sh
+```
+
+- Go to the `https://packages.gitlab.com/gitlab/gitlab-ee` to see latest available package for debain package  here as of now this is latest available of package `gitlab-ee_17.1.6-ee.0_amd64.deb` so we will use that run the following to download package
+```bash
+curl -s https://packages.gitlab.com/install/repositories/gitlab/gitlab-ee/script.deb.sh | sudo bash
+```
+
+- After that install the package by running the following
+```bash
+sudo apt-get install gitlab-ee=17.1.6-ee.0 -y
+```
+
+- After edit the configuration file `sudo nano /etc/gitlab/gitlab.rb` find `external_url` replace this with your ip of your ec2 or if you have domain use that but we use ip  replace this `external_url 'http://gitlab.example.com'` with your server ip it should look like this `external_url 'http://192.168.0.0'` save it
+
+- Run the following to configure your gitlab
+```bash
+sudo gitlab-ctl reconfigure
+```
+Wait until it completes
+
+- TO see the root password `sudo cat /etc/gitlab/initial_root_password` for that access your ec2 and open it in your webbrowser sigin using `root` user and root password that you copied
+
+## Gitlab CI Runner
+- Scroll down and click on **Configure Gitlab**.
+- Click on **CI/CD** Click on **Runners**
+- Click on **New Instance Runner**
+- In **Tags** give it a **tags** like `djangoelk`
+- Now Scroll down and click on **Create runner**
+
+- This is for macos so select **Platform** as **macos** then click on **How do I install GitLab Runner?**
+- Select your Architecture we have `arm64` chip so we are selecting `arm64` copy the commands and run it in terminal
+```bash
+# Download the binary for your system
+sudo curl --output /usr/local/bin/gitlab-runner https://gitlab-runner-downloads.s3.amazonaws.com/latest/binaries/gitlab-runner-darwin-arm64
+
+# Give it permission to execute
+sudo chmod +x /usr/local/bin/gitlab-runner
+
+# The rest of the commands execute as the user who will run the runner
+# Register the runner (steps below), then run
+cd ~
+gitlab-runner install
+gitlab-runner start
+```
+
+- After that in  **Step 1 Copy and paste the following command into your command line to register the runner.**
+
+- After that run the following to run gitlab runner 
+```bash
+gitlab-runner run
+```
+
+- Now create a `./.gitlab-ci.yml` file paste the following in it 
+```yaml
+stages:
+  - configure
+  - build
+  - deploy
+
+# Build stage1
+configure:
+  stage: configure
+  tags:
+    - djangoelk
+  script:
+   # replace user to actual user of mac
+    - cd app
+    - docker build -t rijalboy/nit-django-app:latest .
+    - docker push rijalboy/nit-django-app:latest
+    - cd ..
+    - cat logforwarder.sh > ~/logforwarder.sh
+    - cat launctl.xml > ~/Library/LaunchAgents/com.niteshrijal.logforwarder.plist
+    - cd docker
+    - pwd
+    - docker-compose up setup
+    - cd ..
+    - echo "Setup Successfull"
+
+
+build:
+  stage: build
+  tags:
+    - djangoelk
+  script:
+    - echo "Building the application..."
+    - cd docker
+    - docker-compose up -d
+    - cd ..
+    - echo "Build Successfull"
+    
+
+deploy:
+  stage: deploy
+  tags:
+    - djangoelk
+  script:
+    - echo "Building the application..."
+    - cd kubernetes/postgres
+    - kubectl apply -f pv.yaml -f pvc.yaml 
+    - kubectl apply -f deployment.yaml -f service.yaml -f secret.yaml 
+    - cd ../django
+    - kubectl apply -f deployment.yaml -f service.yaml  -f ingress.yaml
+
+```
+
+
+
+- Create a new project in gitlab -> on gitlab dashboard click on **Create a Project** click on **Create a Blank Project** give it a name like `django-elk` select a namespace then click on **Create Project**
+
+- Then click on **Add Ssh-Key** click **add new key** do `cat ~/.ssh/id_rsa.pub ` and cpoy and paste the key in the **Key** Section. Click on **Add Key**
+- Now go to your project click on the **django-elk**
+
+- Now run the following to add the remote to of your repository
+```bash
+git remote remove origin
+git remote add <your-repository-ssh-url>
+git branch -M  dev01
+git push -uf origin dev01
+```
+- Now go the the gitlab **Build** > **Pipeline** and see the pipeline running successful
