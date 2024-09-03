@@ -1,34 +1,47 @@
 stages:
   - build
-  - test
-  - deploy
+  # - test
+  # - deploy
 
-# Build stage
+# Build stage1
 build:
   stage: build
   tags:
     - elk
   script:
     - echo "Building the application..."
-    # Add your build commands here, e.g., Docker build, compile code, etc.
+    - kubectl create namespace monitoring
+    - cd kubernetes/postgres
+    - kubectl apply -f pv.yaml -f pvc.yaml 
+    - kubectl apply -f deployment.yaml -f service.yaml -f secret.yaml 
+    - cd ../django
+    - kubectl apply -f deployment.yaml -f service.yaml  -f ingress.yaml
+    - cd ../elasticsearch
+    - helm install elasticsearch elastic/elasticsearch -f values.yml -n monitoring
+    - cd ../filebeat
+     helm install filebeat elastic/filebeat -f values.yml -n monitoring
+    - cd ../logstash
+     helm install logstash elastic/logstash -f values.yml -n monitoring
+    # - cd kubernetes/kibana
+    #  helm install kibana elastic/kibana -f values.yml -n monitoring
     - echo "Build completed"
 
-# Test stage
-test:
-  stage: test
-  tags:
-    - elk
-  script:
-    - echo "Running tests..."
-    # Add your test commands here, e.g., unit tests, integration tests, etc.
-    - echo "Tests completed"
+# # Test stage
+# test:
+#   stage: test
+#   tags:
+#     - elk
+#   script:
+#     - echo "Running tests..."
+#     # Add your test commands here, e.g., unit tests, integration tests, etc.
+#     - echo "Tests completed"
 
-# Deploy stage
-deploy:
-  stage: deploy
-  tags:
-    - elk
-  script:
-    - echo "Deploying the application..."
-    # Add your deployment commands here, e.g., deploy to server, Kubernetes, etc.
-    - echo "Deployment completed"
+# # Deploy stage
+# deploy:
+#   stage: deploy
+#   tags:
+#     - elk
+#   script:
+#     - echo "Deploying the application..."
+#     # Add your deployment commands here, e.g., deploy to server, Kubernetes, etc.
+#     - echo "Deployment completed"
