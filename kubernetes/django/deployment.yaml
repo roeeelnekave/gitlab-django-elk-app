@@ -27,7 +27,7 @@ spec:
           value: "hello_django"
         - name: POSTGRES_PASSWORD
           value: "hello_django"
-        - name: DB_NAME
+        - name: POSTGRES_DB
           value: "hello_django_dev"
       #   volumeMounts:
       #   - name: app-volume
