@@ -672,18 +672,7 @@ spec:
       storage: 10Gi
 ```
 
-- To create a secret create `./kubernetes/postgres/secret.yaml` paste the following in it
-```yaml
-apiVersion: v1
-kind: Secret
-metadata:
-  name: postgres-secret
-type: Opaque
-data:
-  POSTGRES_USER: aGVsbG9fZGlhbmdv  # base64 encoded value for 'hello_django'
-  POSTGRES_PASSWORD: aGVsbG9fZGlhbmdv  # base64 encoded value for 'hello_django'
-  POSTGRES_DB: aGVsbG9fZGlhbmdv  # base64 encoded value for 'hello_django_dev'
-```
+
 
 - To create the deployment create `./kubernetes/postgres/deployment.yaml` paste the following in it
 ```yaml
@@ -703,23 +692,14 @@ spec:
     spec:
       containers:
       - name: postgres
-        image: postgres:16
+        image: postgres:latest
         env:
-        - name: POSTGRES_USER
-          valueFrom:
-            secretKeyRef:
-              name: postgres-secret
-              key: POSTGRES_USER
-        - name: POSTGRES_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: postgres-secret
-              key: POSTGRES_PASSWORD
         - name: POSTGRES_DB
-          valueFrom:
-            secretKeyRef:
-              name: postgres-secret
-              key: POSTGRES_DB
+          value: "hello_django_dev"
+        - name: POSTGRES_USER
+          value: "hello_django"
+        - name: POSTGRES_PASSWORD
+          value: "hello_django"
         ports:
         - containerPort: 5432
         volumeMounts:
@@ -737,15 +717,15 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: django-service
+  name: db
 spec:
   selector:
-    app: django
+    app: postgres
   ports:
     - protocol: TCP
-      port: 8000
-      targetPort: 8000
-  type: NodePort  # Change to LoadBalancer if you want external access
+      port: 5432
+      targetPort: 5432
+  type: ClusterIP
 ```
 
 - Now create a django deployment `./kubernetes/django/deployment.yaml` and paste the following in it don't forget to replace `<your-image>`
